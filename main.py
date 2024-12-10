@@ -4,19 +4,27 @@ import psycopg2
 import redis
 from apscheduler.schedulers.background import BackgroundScheduler
 import json
+from dotenv import load_dotenv
+import os
+
 
 # Конфигурация PostgreSQL
+load_dotenv()
 DB_CONFIG = {
-    "dbname": "db.cropdata.ru",
-    "user": "your_user",
-    "password": "your_password",
-    "host": "localhost",
-    "port": 5432
+    "dbname": os.getenv("DB_NAME"),
+    "user": os.getenv("DB_USER"),
+    "password": os.getenv("DB_PASSWORD"),
+    "host": os.getenv("DB_HOST"),
+    "port": int(os.getenv("DB_PORT"))
 }
 
-# Конфигурация Redis
-REDIS_HOST = "localhost"
-REDIS_PORT = 6379
+# Параметры схемы и таблицы
+DB_SCHEMA = os.getenv("DB_SCHEMA")
+DB_TABLE = os.getenv("DB_TABLE")
+
+# Конфигурация Redis из .env
+REDIS_HOST = os.getenv("REDIS_HOST")
+REDIS_PORT = int(os.getenv("REDIS_PORT"))
 REDIS_CACHE_KEY = "province_region_cache"
 
 # Инициализация приложения и кеша
@@ -35,7 +43,8 @@ def update_cache():
     conn = get_db_connection()
     cursor = conn.cursor(cursor_factory=RealDictCursor)
     try:
-        cursor.execute("SELECT province, region FROM your_table;")
+        query = f"SELECT province, region FROM {DB_SCHEMA}.{DB_TABLE};"
+        cursor.execute(query)
         data = cursor.fetchall()
         redis_client.set(REDIS_CACHE_KEY, json.dumps(data))
         print("Cache updated successfully")
