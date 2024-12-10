@@ -1,4 +1,5 @@
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Depends
+from fastapi.security.api_key import APIKeyHeader
 from psycopg2.extras import RealDictCursor
 import psycopg2
 import redis
@@ -34,6 +35,15 @@ API_KEY = os.getenv("API_KEY")
 app = FastAPI()
 redis_client = redis.Redis(host=REDIS_HOST, port=REDIS_PORT, decode_responses=True)
 
+# Настройка заголовка для ключа API
+api_key_header = APIKeyHeader(name="X-API-KEY", auto_error=False)
+
+# Функция для проверки API ключа
+def check_api_key(api_key: str = Depends(api_key_header)):
+    if api_key != API_KEY:
+        raise HTTPException(status_code=401, detail="Unauthorized: Invalid API Key")
+    return api_key
+
 # Функция для подключения к PostgreSQL
 def get_db_connection():
     try:
@@ -67,16 +77,9 @@ scheduler.start()
 def startup_event():
     update_cache()
 
-# Функция для проверки API ключа
-def check_api_key(request: Request):
-    api_key = request.headers.get("X-API-KEY")
-    if api_key != API_KEY:
-        raise HTTPException(status_code=401, detail="Unauthorized: Invalid API Key")
-
 # Точка API для получения списка уникальных провинций
 @app.get("/provinces")
-def get_provinces(request: Request):
-    check_api_key(request)
+def get_provinces(api_key: str = Depends(check_api_key)):
     try:
         cached_data = redis_client.get(REDIS_CACHE_KEY)
         if cached_data:
@@ -90,8 +93,7 @@ def get_provinces(request: Request):
 
 # Точка API для получения списка уникальных регионов
 @app.get("/regions")
-def get_regions(request: Request):
-    check_api_key(request)
+def get_regions(api_key: str = Depends(check_api_key)):
     try:
         cached_data = redis_client.get(REDIS_CACHE_KEY)
         if cached_data:
@@ -105,8 +107,7 @@ def get_regions(request: Request):
 
 # Точка API для получения регионов для конкретной провинции
 @app.get("/regions_for_province/{province}")
-def get_regions_for_province(province: str, request: Request):
-    check_api_key(request)
+def get_regions_for_province(province: str, api_key: str = Depends(check_api_key)):
     try:
         cached_data = redis_client.get(REDIS_CACHE_KEY)
         if cached_data:
