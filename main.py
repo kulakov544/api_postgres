@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from psycopg2.extras import RealDictCursor
 import psycopg2
 import redis
@@ -26,6 +26,9 @@ DB_TABLE = os.getenv("DB_TABLE")
 REDIS_HOST = os.getenv("REDIS_HOST")
 REDIS_PORT = int(os.getenv("REDIS_PORT"))
 REDIS_CACHE_KEY = "province_region_cache"
+
+# Получение секретного ключа API из .env
+API_KEY = os.getenv("API_KEY")
 
 # Инициализация приложения и кеша
 app = FastAPI()
@@ -64,13 +67,55 @@ scheduler.start()
 def startup_event():
     update_cache()
 
-# Точка API для получения данных
-@app.get("/data")
-def get_data():
+# Функция для проверки API ключа
+def check_api_key(request: Request):
+    api_key = request.headers.get("X-API-KEY")
+    if api_key != API_KEY:
+        raise HTTPException(status_code=401, detail="Unauthorized: Invalid API Key")
+
+# Точка API для получения списка уникальных провинций
+@app.get("/provinces")
+def get_provinces(request: Request):
+    check_api_key(request)
     try:
         cached_data = redis_client.get(REDIS_CACHE_KEY)
         if cached_data:
-            return json.loads(cached_data)
+            data = json.loads(cached_data)
+            provinces = list(set([item["province"] for item in data]))
+            return provinces
+        else:
+            raise HTTPException(status_code=500, detail="Cache is empty")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error fetching data from cache: {e}")
+
+# Точка API для получения списка уникальных регионов
+@app.get("/regions")
+def get_regions(request: Request):
+    check_api_key(request)
+    try:
+        cached_data = redis_client.get(REDIS_CACHE_KEY)
+        if cached_data:
+            data = json.loads(cached_data)
+            regions = list(set([item["region"] for item in data]))
+            return regions
+        else:
+            raise HTTPException(status_code=500, detail="Cache is empty")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error fetching data from cache: {e}")
+
+# Точка API для получения регионов для конкретной провинции
+@app.get("/regions_for_province/{province}")
+def get_regions_for_province(province: str, request: Request):
+    check_api_key(request)
+    try:
+        cached_data = redis_client.get(REDIS_CACHE_KEY)
+        if cached_data:
+            data = json.loads(cached_data)
+            regions = [item["region"] for item in data if item["province"] == province]
+            if regions:
+                return regions
+            else:
+                raise HTTPException(status_code=404, detail=f"No regions found for province {province}")
         else:
             raise HTTPException(status_code=500, detail="Cache is empty")
     except Exception as e:
