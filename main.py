@@ -59,7 +59,25 @@ def update_cache():
         query = f"SELECT province, region FROM {DB_SCHEMA}.{DB_TABLE};"
         cursor.execute(query)
         data = cursor.fetchall()
-        redis_client.set(REDIS_CACHE_KEY, json.dumps(data))
+
+        # Обработка данных для уникальных значений
+        unique_provinces = set(item["province"] for item in data)
+        unique_regions = set(item["region"] for item in data)
+
+        # Обработка данных для регионов по провинциям
+        province_to_regions = {}
+        for item in data:
+            province = item["province"]
+            region = item["region"]
+            if province not in province_to_regions:
+                province_to_regions[province] = set()
+            province_to_regions[province].add(region)
+
+        # Сохранение обработанных данных в Redis
+        redis_client.set(f"{REDIS_CACHE_KEY}:provinces", json.dumps(list(unique_provinces)))
+        redis_client.set(f"{REDIS_CACHE_KEY}:regions", json.dumps(list(unique_regions)))
+        redis_client.set(f"{REDIS_CACHE_KEY}:province_regions", json.dumps(province_to_regions))
+
         print("Cache updated successfully")
     except Exception as e:
         print(f"Error updating cache: {e}")
@@ -81,10 +99,9 @@ def startup_event():
 @app.get("/provinces")
 def get_provinces(api_key: str = Depends(check_api_key)):
     try:
-        cached_data = redis_client.get(REDIS_CACHE_KEY)
+        cached_data = redis_client.get(f"{REDIS_CACHE_KEY}:provinces")
         if cached_data:
-            data = json.loads(cached_data)
-            provinces = list(set([item["province"] for item in data]))
+            provinces = json.loads(cached_data)
             return provinces
         else:
             raise HTTPException(status_code=500, detail="Cache is empty")
@@ -95,10 +112,9 @@ def get_provinces(api_key: str = Depends(check_api_key)):
 @app.get("/regions")
 def get_regions(api_key: str = Depends(check_api_key)):
     try:
-        cached_data = redis_client.get(REDIS_CACHE_KEY)
+        cached_data = redis_client.get(f"{REDIS_CACHE_KEY}:regions")
         if cached_data:
-            data = json.loads(cached_data)
-            regions = list(set([item["region"] for item in data]))
+            regions = json.loads(cached_data)
             return regions
         else:
             raise HTTPException(status_code=500, detail="Cache is empty")
@@ -109,10 +125,10 @@ def get_regions(api_key: str = Depends(check_api_key)):
 @app.get("/regions_for_province/{province}")
 def get_regions_for_province(province: str, api_key: str = Depends(check_api_key)):
     try:
-        cached_data = redis_client.get(REDIS_CACHE_KEY)
+        cached_data = redis_client.get(f"{REDIS_CACHE_KEY}:province_regions")
         if cached_data:
-            data = json.loads(cached_data)
-            regions = [item["region"] for item in data if item["province"] == province]
+            province_regions = json.loads(cached_data)
+            regions = province_regions.get(province, [])
             if regions:
                 return regions
             else:
